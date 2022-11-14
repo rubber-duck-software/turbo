@@ -33,21 +33,9 @@ You should specify your `dev` task like this in your `turbo.json`.
 }
 ```
 
+This will let developers run the dev task using `turbo dev`.
+
 Since `dev` tasks don't produce outputs, `outputs` is empty. `dev` tasks are also unique in that you rarely want to [cache](/repo/docs/core-concepts/caching) them, so we set `cache` as `false`.
-
-### Setting up `package.json`
-
-You should also provide a `dev` task in your root `package.json`:
-
-```json filename="package.json"
-{
-  "scripts": {
-    "dev": "turbo run dev"
-  }
-}
-```
-
-This enables developers to run the task directly from their normal task runner.
 
 ## Running tasks _before_ `dev`
 
