@@ -53,6 +53,7 @@ pub mod primitives;
 mod raw_vc;
 mod read_ref;
 pub mod registry;
+mod small_duration;
 mod task_input;
 mod timed_future;
 pub mod trace;
@@ -78,6 +79,7 @@ pub use native_function::{NativeFunction, NativeFunctionVc};
 pub use nothing::{Nothing, NothingVc};
 pub use raw_vc::{CollectiblesFuture, RawVc, ReadRawVcFuture, ResolveTypeError};
 pub use read_ref::ReadRef;
+pub use small_duration::SmallDuration;
 pub use task_input::{FromTaskInput, SharedReference, SharedValue, TaskInput};
 pub use turbo_tasks_macros::{function, value, value_impl, value_trait};
 pub use value::{TransientInstance, TransientValue, Value};
@@ -93,7 +95,7 @@ pub mod macro_helpers {
 }
 
 pub mod test_helpers {
-    pub use super::manager::with_turbo_tasks_for_testing;
+    pub use super::manager::{current_task_for_testing, with_turbo_tasks_for_testing};
 }
 
 pub fn register() {

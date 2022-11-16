@@ -5241,6 +5241,7 @@ dependencies = [
  "any_key",
  "anyhow",
  "bitflags",
+ "concurrent-queue",
  "erased-serde",
  "event-listener",
  "flurry",
