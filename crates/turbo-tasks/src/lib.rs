@@ -77,7 +77,7 @@ pub use manager::{
 };
 pub use native_function::{NativeFunction, NativeFunctionVc};
 pub use nothing::{Nothing, NothingVc};
-pub use raw_vc::{CollectiblesFuture, RawVc, ReadRawVcFuture, ResolveTypeError};
+pub use raw_vc::{CellId, CollectiblesFuture, RawVc, ReadRawVcFuture, ResolveTypeError};
 pub use read_ref::ReadRef;
 pub use small_duration::SmallDuration;
 pub use task_input::{FromTaskInput, SharedReference, SharedValue, TaskInput};
@@ -91,7 +91,7 @@ pub use value_type::{
 pub mod macro_helpers {
     pub use once_cell::sync::{Lazy, OnceCell};
 
-    pub use super::manager::{find_cell_by_key, find_cell_by_type};
+    pub use super::manager::find_cell_by_type;
 }
 
 pub mod test_helpers {
