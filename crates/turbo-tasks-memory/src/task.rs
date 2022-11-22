@@ -12,7 +12,7 @@ use std::{
 };
 
 use anyhow::Result;
-use parking_lot::{Mutex, RwLock, RwLockWriteGuard};
+use parking_lot::Mutex;
 use tokio::task_local;
 use turbo_tasks::{
     backend::PersistentTaskType,
@@ -110,7 +110,8 @@ pub struct Task {
     /// The type of the task
     ty: TaskType,
     /// The mutable state of the task
-    state: RwLock<TaskState>,
+    /// Unset state is equal to a Dirty task that has not been executed yet
+    state: RwOptionLock<TaskState>,
 }
 
 /// Task data that is only modified during task execution.
@@ -281,6 +282,7 @@ use crate::{
     count_hash_set::CountHashSet,
     memory_backend::Job,
     output::Output,
+    rw_option_lock::{RwOptionLock, WriteGuard},
     scope::{ScopeChildChangeEffect, TaskScopeId, TaskScopes},
     stats::{self, StatsReferences},
     MemoryBackend,
@@ -293,7 +295,7 @@ impl Task {
             id,
             inputs,
             ty: TaskType::Native(native_fn, bound_fn),
-            state: RwLock::new(TaskState::new(id)),
+            state: RwOptionLock::new(TaskState::new(id)),
         }
     }
 
@@ -306,7 +308,7 @@ impl Task {
             id,
             inputs,
             ty: TaskType::ResolveNative(native_fn),
-            state: RwLock::new(TaskState::new(id)),
+            state: RwOptionLock::new(TaskState::new(id)),
         }
     }
 
@@ -320,7 +322,7 @@ impl Task {
             id,
             inputs,
             ty: TaskType::ResolveTrait(trait_type, trait_fn_name),
-            state: RwLock::new(TaskState::new(id)),
+            state: RwOptionLock::new(TaskState::new(id)),
         }
     }
 
@@ -333,7 +335,7 @@ impl Task {
             id,
             inputs: Vec::new(),
             ty: TaskType::Root(Box::new(functor)),
-            state: RwLock::new(TaskState::new_scheduled_in_scope(id, scope)),
+            state: RwOptionLock::new(TaskState::new_scheduled_in_scope(id, scope)),
         }
     }
 
@@ -346,7 +348,7 @@ impl Task {
             id,
             inputs: Vec::new(),
             ty: TaskType::Once(Mutex::new(Some(Box::pin(functor)))),
-            state: RwLock::new(TaskState::new_scheduled_in_scope(id, scope)),
+            state: RwOptionLock::new(TaskState::new_scheduled_in_scope(id, scope)),
         }
     }
 
@@ -437,7 +439,10 @@ impl Task {
         backend: &MemoryBackend,
         turbo_tasks: &dyn TurboTasksBackendApi,
     ) -> bool {
-        let mut state = self.state.write();
+        let mut state = self
+            .state
+            .write()
+            .expect("Execution started in unexpected state unloaded");
         match state.state_type {
             Done { .. } | InProgress { .. } | InProgressDirty { .. } => {
                 // should not start in this state
@@ -516,7 +521,10 @@ impl Task {
         result: Result<Result<RawVc>, Option<Cow<'static, str>>>,
         turbo_tasks: &dyn TurboTasksBackendApi,
     ) {
-        let mut state = self.state.write();
+        let mut state = self
+            .state
+            .write()
+            .expect("Task execution completed in unexpected state unloaded");
         match state.state_type {
             InProgress { .. } => match result {
                 Ok(Ok(result)) => state.output.link(result, turbo_tasks),
@@ -547,7 +555,10 @@ impl Task {
         let mut schedule_task = false;
         let mut dependencies = DEPENDENCIES_TO_TRACK.with(|deps| deps.take());
         {
-            let mut state = self.state.write();
+            let mut state = self
+                .state
+                .write()
+                .expect("Task execution completed in unexpected state unloaded");
 
             state.total_duration += duration;
             state.last_duration = duration.into();
@@ -610,10 +621,10 @@ impl Task {
             return;
         }
 
-        let id = self.id;
-        let mut clear_dependencies = None;
-        {
-            let mut state = self.state.write();
+        if let Some(mut state) = self.state.write() {
+            let id = self.id;
+            let mut clear_dependencies = None;
+
             match state.state_type {
                 Dirty { .. } | Scheduled { .. } | InProgressDirty { .. } => {
                     // already dirty
@@ -657,10 +668,10 @@ impl Task {
                     drop(state);
                 }
             }
-        }
 
-        if let Some(dependencies) = clear_dependencies {
-            self.clear_dependencies(dependencies, backend);
+            if let Some(dependencies) = clear_dependencies {
+                self.clear_dependencies(dependencies, backend);
+            }
         }
     }
 
@@ -669,7 +680,7 @@ impl Task {
         reason: &'static str,
         turbo_tasks: &dyn TurboTasksBackendApi,
     ) {
-        let mut state = self.state.write();
+        let mut state = self.state.write_or_init(|| TaskState::new(self.id));
         match state.state_type {
             TaskStateType::Dirty { ref mut event } => {
                 state.state_type = Scheduled {
@@ -692,7 +703,7 @@ impl Task {
         turbo_tasks: &dyn TurboTasksBackendApi,
         queue: &mut VecDeque<(TaskId, usize)>,
     ) {
-        let mut state = self.state.write();
+        let mut state = self.state.write_or_init(|| TaskState::new(self.id));
         let TaskState {
             scopes, children, ..
         } = &mut *state;
@@ -796,7 +807,7 @@ impl Task {
 
     fn add_self_to_new_scope(
         &self,
-        state: &mut RwLockWriteGuard<TaskState>,
+        state: &mut WriteGuard<TaskState>,
         id: TaskScopeId,
         backend: &MemoryBackend,
         turbo_tasks: &dyn TurboTasksBackendApi,
@@ -847,7 +858,7 @@ impl Task {
 
     fn remove_self_from_scope(
         &self,
-        state: &mut RwLockWriteGuard<TaskState>,
+        state: &mut WriteGuard<TaskState>,
         id: TaskScopeId,
         backend: &MemoryBackend,
         turbo_tasks: &dyn TurboTasksBackendApi,
@@ -897,7 +908,7 @@ impl Task {
         turbo_tasks: &dyn TurboTasksBackendApi,
         queue: &mut VecDeque<TaskId>,
     ) {
-        let mut state = self.state.write();
+        let mut state = self.state.write_or_init(|| TaskState::new(self.id));
         match state.scopes {
             TaskScopes::Root(root) => {
                 if root != id {
@@ -968,7 +979,7 @@ impl Task {
         backend: &MemoryBackend,
         turbo_tasks: &dyn TurboTasksBackendApi,
     ) {
-        let mut state = self.state.write();
+        let mut state = self.state.write_or_init(|| TaskState::new(self.id));
         match state.scopes {
             TaskScopes::Root(root) => {
                 log_scope_update!("removing root scope {root}");
@@ -996,10 +1007,10 @@ impl Task {
 
     fn make_root_scoped_internal<'a>(
         &self,
-        mut state: RwLockWriteGuard<'a, TaskState>,
+        mut state: WriteGuard<'a, TaskState>,
         backend: &MemoryBackend,
         turbo_tasks: &dyn TurboTasksBackendApi,
-    ) -> Option<RwLockWriteGuard<'a, TaskState>> {
+    ) -> Option<WriteGuard<'a, TaskState>> {
         if matches!(state.scopes, TaskScopes::Root(_)) {
             return Some(state);
         }
@@ -1194,13 +1205,13 @@ impl Task {
 
     /// Access to the output cell.
     pub(crate) fn with_output_mut<T>(&self, func: impl FnOnce(&mut Output) -> T) -> T {
-        let mut state = self.state.write();
+        let mut state = self.state.write_or_init(|| TaskState::new(self.id));
         func(&mut state.output)
     }
 
     /// Access to a cell.
     pub(crate) fn with_cell_mut<T>(&self, index: CellId, func: impl FnOnce(&mut Cell) -> T) -> T {
-        let mut state = self.state.write();
+        let mut state = self.state.write_or_init(|| TaskState::new(self.id));
         let list = state.cells.entry(index.type_id).or_default();
         let i = index.index as usize;
         if list.len() <= i {
@@ -1211,10 +1222,11 @@ impl Task {
 
     /// Access to a cell.
     pub(crate) fn with_cell<T>(&self, index: CellId, func: impl FnOnce(&Cell) -> T) -> T {
-        let state = self.state.read();
-        if let Some(list) = state.cells.get(&index.type_id) {
-            if let Some(cell) = list.get(index.index as usize) {
-                return func(cell);
+        if let Some(state) = self.state.read() {
+            if let Some(list) = state.cells.get(&index.type_id) {
+                if let Some(cell) = list.get(index.index as usize) {
+                    return func(cell);
+                }
             }
         }
         func(&Default::default())
@@ -1222,39 +1234,54 @@ impl Task {
 
     /// For testing purposes
     pub fn reset_executions(&self) {
-        let mut state = self.state.write();
-        if state.executions > 1 {
-            state.executions = 1;
+        if let Some(mut state) = self.state.write() {
+            if state.executions > 1 {
+                state.executions = 1;
+            }
         }
     }
 
     pub fn is_pending(&self) -> bool {
-        let state = self.state.read();
-        !matches!(state.state_type, TaskStateType::Done { .. })
+        if let Some(state) = self.state.read() {
+            !matches!(state.state_type, TaskStateType::Done { .. })
+        } else {
+            true
+        }
     }
 
     pub fn reset_stats(&self) {
-        let mut state = self.state.write();
-        state.executions = 0;
-        state.total_duration = Duration::ZERO;
-        state.last_duration = SmallDuration::ZERO;
+        if let Some(mut state) = self.state.write() {
+            state.executions = 0;
+            state.total_duration = Duration::ZERO;
+            state.last_duration = SmallDuration::ZERO;
+        }
     }
 
     pub fn get_stats_info(&self, backend: &MemoryBackend) -> TaskStatsInfo {
-        let state = self.state.read();
-        TaskStatsInfo {
-            total_duration: state.total_duration,
-            last_duration: state.last_duration.into(),
-            executions: state.executions,
-            root_scoped: matches!(state.scopes, TaskScopes::Root(_)),
-            child_scopes: match state.scopes {
-                TaskScopes::Root(_) => 1,
-                TaskScopes::Inner(ref list, _) => list.len(),
-            },
-            active: state
-                .scopes
-                .iter()
-                .any(|scope| backend.with_scope(scope, |scope| scope.state.lock().is_active())),
+        if let Some(state) = self.state.read() {
+            TaskStatsInfo {
+                total_duration: state.total_duration,
+                last_duration: state.last_duration.into(),
+                executions: state.executions,
+                root_scoped: matches!(state.scopes, TaskScopes::Root(_)),
+                child_scopes: match state.scopes {
+                    TaskScopes::Root(_) => 1,
+                    TaskScopes::Inner(ref list, _) => list.len(),
+                },
+                active: state
+                    .scopes
+                    .iter()
+                    .any(|scope| backend.with_scope(scope, |scope| scope.state.lock().is_active())),
+            }
+        } else {
+            TaskStatsInfo {
+                total_duration: Duration::ZERO,
+                last_duration: Duration::ZERO,
+                executions: 0,
+                root_scoped: false,
+                child_scopes: 0,
+                active: false,
+            }
         }
     }
 
@@ -1271,8 +1298,7 @@ impl Task {
     pub fn get_stats_references(&self) -> StatsReferences {
         let mut refs = Vec::new();
         let mut scope_refs = Vec::new();
-        {
-            let state = self.state.read();
+        if let Some(state) = self.state.read() {
             for child in state.children.iter() {
                 refs.push((stats::ReferenceType::Child, *child));
             }
@@ -1342,7 +1368,7 @@ impl Task {
         backend: &MemoryBackend,
         turbo_tasks: &dyn TurboTasksBackendApi,
     ) {
-        let mut state = self.state.write();
+        let mut state = self.state.write_or_init(|| TaskState::new(self.id));
         if state.children.insert(child_id) {
             let scopes = state.scopes.clone();
             drop(state);
@@ -1377,10 +1403,10 @@ impl Task {
 
     fn ensure_root_scoped<'a>(
         &'a self,
-        mut state: RwLockWriteGuard<'a, TaskState>,
+        mut state: WriteGuard<'a, TaskState>,
         backend: &MemoryBackend,
         turbo_tasks: &dyn TurboTasksBackendApi,
-    ) -> RwLockWriteGuard<'a, TaskState> {
+    ) -> WriteGuard<'a, TaskState> {
         while !state.scopes.is_root() {
             #[cfg(not(feature = "report_expensive"))]
             let result = self.make_root_scoped_internal(state, backend, turbo_tasks);
@@ -1407,7 +1433,7 @@ impl Task {
                 break;
             } else {
                 // We need to acquire a new lock and everything might have changed in between
-                state = self.state.write();
+                state = self.state.write_or_init(|| TaskState::new(self.id));
                 continue;
             }
         }
@@ -1421,7 +1447,7 @@ impl Task {
         backend: &MemoryBackend,
         turbo_tasks: &dyn TurboTasksBackendApi,
     ) -> Result<Result<T, EventListener>> {
-        let mut state = self.state.write();
+        let mut state = self.state.write_or_init(|| TaskState::new(self.id));
         if strongly_consistent {
             state = self.ensure_root_scoped(state, backend, turbo_tasks);
             // We need to wait for all foreground jobs to be finished as there could be
@@ -1468,7 +1494,7 @@ impl Task {
         backend: &MemoryBackend,
         turbo_tasks: &dyn TurboTasksBackendApi,
     ) -> Result<Result<HashSet<RawVc>, EventListener>> {
-        let mut state = self.state.write();
+        let mut state = self.state.write_or_init(|| TaskState::new(self.id));
         state = self.ensure_root_scoped(state, backend, turbo_tasks);
         // We need to wait for all foreground jobs to be finished as there could be
         // ongoing add_to_scope jobs that need to be finished before reading
@@ -1496,7 +1522,7 @@ impl Task {
         backend: &MemoryBackend,
         turbo_tasks: &dyn TurboTasksBackendApi,
     ) {
-        let mut state = self.state.write();
+        let mut state = self.state.write_or_init(|| TaskState::new(self.id));
         if state.collectibles.emit(trait_type, collectible) {
             let mut tasks = HashSet::new();
             state
@@ -1521,7 +1547,7 @@ impl Task {
         backend: &MemoryBackend,
         turbo_tasks: &dyn TurboTasksBackendApi,
     ) {
-        let mut state = self.state.write();
+        let mut state = self.state.write_or_init(|| TaskState::new(self.id));
         if state.collectibles.unemit(trait_type, collectible) {
             let mut tasks = HashSet::new();
             state
@@ -1597,13 +1623,16 @@ pub fn run_remove_from_scope_queue(
 
 impl Display for Task {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let state = self.state.read();
-        write!(
-            f,
-            "Task({}, {})",
-            self.get_description(),
-            Task::state_string(&state)
-        )
+        if let Some(state) = self.state.read() {
+            write!(
+                f,
+                "Task({}, {})",
+                self.get_description(),
+                Task::state_string(&state)
+            )
+        } else {
+            write!(f, "Task({}, unloaded)", self.get_description())
+        }
     }
 }
 
