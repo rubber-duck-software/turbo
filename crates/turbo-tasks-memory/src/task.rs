@@ -2074,7 +2074,7 @@ impl Task {
         }
     }
 
-    pub(crate) fn gc(&self, unread_cells: bool, cells: Vec<CellId>) {
+    pub(crate) fn gc(&self, unread_cells: bool, cells: &[CellId]) {
         assert!(self.is_pure());
         if let TaskMetaStateWriteGuard::Full(mut state) = self.state_mut() {
             if unread_cells {
@@ -2086,7 +2086,7 @@ impl Task {
                     }
                 }
             }
-            for cell in cells {
+            for &cell in cells {
                 if let Some(cells) = state.cells.get_mut(&cell.type_id) {
                     if let Some(cell) = cells.get_mut(cell.index as usize) {
                         cell.gc_content();
