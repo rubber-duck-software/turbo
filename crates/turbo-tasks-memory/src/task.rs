@@ -1337,12 +1337,18 @@ impl Task {
                                         TaskMetaState::Unloaded(UnloadedTaskState { stats_type }),
                                     ) {
                                         state.event.notify(usize::MAX);
+                                        child.decrement_tasks();
                                         child.decrement_unfinished_tasks(backend);
-                                        {
+                                        let notify = {
                                             // Partial tasks are always dirty
                                             let mut child = child.state.lock();
                                             child.remove_dirty_task(self.id);
-                                        }
+                                            child.take_all_dependent_tasks()
+                                        };
+                                        drop(state);
+                                        println!("unloading {} from {}", root, self.id);
+
+                                        turbo_tasks.schedule_notify_tasks_set(&notify);
 
                                         // Now this root scope is eventually no longer referenced
                                         // and we can unload it, once all foreground jobs are done
