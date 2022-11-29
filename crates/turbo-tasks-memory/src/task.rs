@@ -348,6 +348,7 @@ struct PartialTaskState {
     stats_type: StatsType,
     event: Event,
     scopes: TaskScopes,
+    // TODO remove that and switch to full state instead
 }
 
 impl PartialTaskState {
