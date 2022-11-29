@@ -3321,6 +3321,7 @@ dependencies = [
  "anyhow",
  "indexmap",
  "lazy_static",
+ "qstring",
  "rand",
  "regex",
  "serde",

@@ -12,6 +12,7 @@ bench = false
 anyhow = "1.0.47"
 indexmap = { workspace = true, features = ["serde"] }
 lazy_static = "1.4.0"
+qstring = "0.7.2"
 rand = "0.8.5"
 regex = "1.6.0"
 serde = "1.0.136"
