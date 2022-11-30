@@ -3320,7 +3320,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "indexmap",
+ "lazy_static",
  "rand",
+ "regex",
  "serde",
  "serde_json",
  "tokio",
