@@ -66,7 +66,7 @@ use crate::{
         get_server_environment, get_server_module_options_context,
         get_server_resolve_options_context, ServerContextType,
     },
-    util::regular_expression_for_path,
+    util::{pathname_for_path, regular_expression_for_path},
 };
 
 #[turbo_tasks::function]
@@ -358,10 +358,14 @@ async fn create_app_source_for_directory(
         list.push(LayoutSegment { files, target }.cell());
         layouts = LayoutSegmentsVc::cell(list);
         if let Some(page_path) = page {
+            let pathname = pathname_for_path(server_root, target, true);
+            let path_regex = regular_expression_for_path(server_root, target, true);
+
             sources.push(create_node_rendered_source(
                 specificity,
                 server_root,
-                regular_expression_for_path(server_root, target, false),
+                pathname,
+                path_regex,
                 AppRenderer {
                     context_ssr,
                     context,
