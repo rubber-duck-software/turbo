@@ -20,7 +20,7 @@ async fn basic_get() {
         let response = &*fetch(StringVc::cell(server.url("/foo.woff")), OptionStringVc::cell(None)).await?;
         resource_mock.assert();
         assert_eq!(response.status, 200);
-        assert_eq!(String::from_utf8_lossy(&response.body.await?), "responsebody");
+        assert_eq!(*response.body.to_string().await?, "responsebody");
     }
 }
 
@@ -39,7 +39,7 @@ async fn sends_user_agent() {
         let response = fetch(StringVc::cell(server.url("/foo.woff")), OptionStringVc::cell(Some("foo".to_owned()))).await?;
         resource_mock.assert();
         assert_eq!(response.status, 200);
-        assert_eq!(String::from_utf8_lossy(&response.body.await?), "responsebody");
+        assert_eq!(*response.body.to_string().await?, "responsebody");
     }
 }
 
@@ -62,7 +62,7 @@ async fn invalidation_does_not_invalidate() {
         let response = fetch(url, user_agent).await?;
         resource_mock.assert();
         assert_eq!(response.status, 200);
-        assert_eq!(String::from_utf8_lossy(&response.body.await?), "responsebody");
+        assert_eq!(*response.body.to_string().await?, "responsebody");
 
         let second_response = fetch(url, user_agent).await?;
         // Assert that a second request is never sent -- the result is cached via turbo tasks

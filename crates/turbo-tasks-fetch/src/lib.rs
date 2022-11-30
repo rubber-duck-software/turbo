@@ -1,18 +1,31 @@
 #![feature(min_specialization)]
 
 use anyhow::Result;
-use turbo_tasks::primitives::{BytesVc, OptionStringVc, StringVc};
+use turbo_tasks::primitives::{OptionStringVc, StringVc};
 
 pub fn register() {
     turbo_tasks::register();
     include!(concat!(env!("OUT_DIR"), "/register.rs"));
 }
 
-#[derive(Debug)]
 #[turbo_tasks::value(shared)]
+#[derive(Debug)]
 pub struct HttpResponse {
     pub status: u16,
-    pub body: BytesVc,
+    pub body: HttpResponseBodyVc,
+}
+
+#[turbo_tasks::value(shared)]
+#[derive(Debug)]
+pub struct HttpResponseBody(Vec<u8>);
+
+#[turbo_tasks::value_impl]
+impl HttpResponseBodyVc {
+    #[turbo_tasks::function]
+    pub async fn to_string(self) -> Result<StringVc> {
+        let this = &*self.await?;
+        Ok(StringVc::cell(std::str::from_utf8(&this.0)?.to_owned()))
+    }
 }
 
 #[turbo_tasks::function]
@@ -32,7 +45,7 @@ pub async fn fetch(url: StringVc, user_agent: OptionStringVc) -> Result<HttpResp
 
     Ok(HttpResponse {
         status,
-        body: BytesVc::cell(body),
+        body: HttpResponseBodyVc::cell(HttpResponseBody(body)),
     }
     .into())
 }
