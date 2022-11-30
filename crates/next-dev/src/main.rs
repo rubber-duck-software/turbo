@@ -40,5 +40,5 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    next_dev::start_server(&options).await
+    next_dev::start_server(options).await
 }

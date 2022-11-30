@@ -42,6 +42,7 @@ use crate::{
     app_render::{
         next_layout_entry_transition::NextLayoutEntryTransition, LayoutSegment, LayoutSegmentsVc,
     },
+    config::NextConfigVc,
     embed_js::{next_js_file, wrap_with_next_js_fs},
     fallback::get_fallback_page,
     next_client::{
@@ -219,7 +220,7 @@ pub async fn create_app_source(
     server_root: FileSystemPathVc,
     env: ProcessEnvVc,
     browserslist_query: &str,
-    externals: StringsVc,
+    config: NextConfigVc,
 ) -> Result<ContentSourceVc> {
     let project_root = wrap_with_next_js_fs(project_root);
 
@@ -233,6 +234,13 @@ pub async fn create_app_source(
         return Ok(NoContentSourceVc::new().into());
     };
 
+    let externals = StringsVc::cell(
+        config
+            .await?
+            .experimental
+            .server_components_external_packages
+            .clone(),
+    );
     let context_ssr = app_context(
         project_root,
         server_root,

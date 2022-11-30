@@ -17,13 +17,15 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use devserver_options::DevServerOptions;
 use next_core::{
-    create_app_source, create_server_rendered_source, create_web_entry_source, env::load_env,
+    config::{ExperimentalConfig, NextConfig},
+    create_app_source, create_server_rendered_source, create_web_entry_source,
+    env::load_env,
     source_map::NextSourceMapTraceContentSourceVc,
 };
 use owo_colors::OwoColorize;
 use turbo_tasks::{
-    primitives::StringsVc, util::FormatDuration, RawVc, StatsType, TransientInstance,
-    TransientValue, TurboTasks, TurboTasksBackendApi, Value,
+    util::FormatDuration, RawVc, StatsType, TransientInstance, TransientValue, TurboTasks,
+    TurboTasksBackendApi, Value,
 };
 use turbo_tasks_fs::{DiskFileSystemVc, FileSystemVc};
 use turbo_tasks_memory::MemoryBackend;
@@ -53,6 +55,7 @@ pub struct NextDevServerBuilder {
     show_all: bool,
     log_detail: bool,
     allow_retry: bool,
+    react_strict_mode: Option<bool>,
 }
 
 impl NextDevServerBuilder {
@@ -77,6 +80,7 @@ impl NextDevServerBuilder {
             show_all: false,
             log_detail: false,
             allow_retry: false,
+            react_strict_mode: None,
         }
     }
 
@@ -85,8 +89,13 @@ impl NextDevServerBuilder {
         self
     }
 
-    pub fn server_component_external(mut self, external: String) -> NextDevServerBuilder {
-        self.server_component_externals.push(external);
+    pub fn server_component_externals(mut self, externals: Vec<String>) -> NextDevServerBuilder {
+        self.server_component_externals = externals;
+        self
+    }
+
+    pub fn react_strict_mode(mut self, strict_mode: bool) -> NextDevServerBuilder {
+        self.react_strict_mode = Some(strict_mode);
         self
     }
 
@@ -137,6 +146,7 @@ impl NextDevServerBuilder {
         let root_dir = self.root_dir;
         let entry_requests = self.entry_requests;
         let server_component_externals = self.server_component_externals;
+        let react_strict_mode = self.react_strict_mode;
         let eager_compile = self.eager_compile;
         let show_all = self.show_all;
         let log_detail = self.log_detail;
@@ -166,6 +176,7 @@ impl NextDevServerBuilder {
                 console_ui.clone().into(),
                 browserslist_query.clone(),
                 server_component_externals.clone(),
+                react_strict_mode.clone(),
             )
         };
 
@@ -263,6 +274,7 @@ async fn source(
     console_ui: TransientInstance<ConsoleUi>,
     browserslist_query: String,
     server_component_externals: Vec<String>,
+    react_strict_mode: Option<bool>,
 ) -> Result<ContentSourceVc> {
     let console_ui = (*console_ui).clone().cell();
     let output_fs = output_fs(&project_dir, console_ui);
@@ -273,7 +285,16 @@ async fn source(
         .unwrap_or(project_relative);
     let project_path = fs.root().join(project_relative);
 
-    let env = load_env(project_path);
+    let config = NextConfig {
+        react_strict_mode,
+
+        experimental: ExperimentalConfig {
+            server_components_external_packages: server_component_externals,
+        },
+    }
+    .cell();
+
+    let env = load_env(project_path, config);
 
     let output_root = output_fs.root().join("/.next/server");
 
@@ -304,7 +325,7 @@ async fn source(
         dev_server_root,
         env,
         &browserslist_query,
-        StringsVc::cell(server_component_externals),
+        config,
     );
     let viz = turbo_tasks_viz::TurboTasksSource {
         turbo_tasks: turbo_tasks.into(),
@@ -350,7 +371,7 @@ pub fn register() {
 }
 
 /// Start a devserver with the given options.
-pub async fn start_server(options: &DevServerOptions) -> Result<()> {
+pub async fn start_server(options: DevServerOptions) -> Result<()> {
     let start = Instant::now();
 
     #[cfg(feature = "tokio_console")]
@@ -399,15 +420,12 @@ pub async fn start_server(options: &DevServerOptions) -> Result<()> {
             options
                 .log_level
                 .map_or_else(|| IssueSeverity::Warning, |l| l.0),
-        );
+        )
+        .allow_retry(options.allow_retry)
+        .server_component_externals(options.server_components_external_packages);
 
-    #[cfg(feature = "serializable")]
-    {
-        server = server.allow_retry(options.allow_retry);
-
-        for package in options.server_components_external_packages.iter() {
-            server = server.server_component_external(package.to_string());
-        }
+    if let Some(strict_mode) = options.react_strict_mode {
+        server = server.react_strict_mode(strict_mode);
     }
 
     let server = server.build().await?;

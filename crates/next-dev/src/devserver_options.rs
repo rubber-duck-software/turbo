@@ -78,25 +78,34 @@ pub struct DevServerOptions {
     /// Whether to enable full task stats recording in Turbo Engine.
     pub full_stats: bool,
 
-    // Inherited options from next-dev, need revisit later.
-    #[cfg_attr(feature = "cli", clap(long))]
-    #[cfg_attr(feature = "serializable", serde(default))]
+    // ==
+    // = Inherited options from next-dev, need revisit later.
+    // ==
     /// If port is not explicitly specified, use different port if it's already
     /// in use.
+    #[cfg_attr(feature = "cli", clap(long))]
+    #[cfg_attr(feature = "serializable", serde(default))]
     pub allow_retry: bool,
+
+    /// Internal for next.js, no specific usage yet.
     #[cfg_attr(feature = "cli", clap(long))]
     #[cfg_attr(feature = "serializable", serde(default))]
-    /// Internal for next.js, no specific usage yet.
     pub dev: bool,
-    #[cfg_attr(feature = "cli", clap(long))]
-    #[cfg_attr(feature = "serializable", serde(default))]
+
     /// Internal for next.js, no specific usage yet.
-    pub is_next_dev_command: bool,
     #[cfg_attr(feature = "cli", clap(long))]
     #[cfg_attr(feature = "serializable", serde(default))]
+    pub is_next_dev_command: bool,
+
     /// Specify server component external packages explicitly. This is an
     /// experimental flag.
+    #[cfg_attr(feature = "cli", clap(long))]
+    #[cfg_attr(feature = "serializable", serde(default))]
     pub server_components_external_packages: Vec<String>,
+
+    /// Enable or explicitly disable (for `appDir`) react strict mode.
+    #[cfg_attr(feature = "cli", clap(long))]
+    pub react_strict_mode: Option<bool>,
 }
 
 #[cfg(feature = "serializable")]

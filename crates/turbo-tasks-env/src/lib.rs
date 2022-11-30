@@ -3,6 +3,7 @@
 mod command_line;
 mod dotenv;
 mod filter;
+mod merge;
 
 use std::{env, sync::Mutex};
 
@@ -12,6 +13,7 @@ use turbo_tasks::primitives::OptionStringVc;
 
 pub use self::{
     command_line::CommandLineProcessEnvVc, dotenv::DotenvProcessEnvVc, filter::FilterProcessEnvVc,
+    merge::MergeProcessEnvVc,
 };
 
 #[turbo_tasks::value(transparent)]
@@ -27,11 +29,12 @@ impl EnvMapVc {
 
 #[turbo_tasks::value_trait]
 pub trait ProcessEnv {
-    // TODO SECURITY: From security perspective it's not good that we read *all* env
-    // vars into the cache. This might store secrects into the persistent cache
-    // which we want to avoid.
-    // Instead we should use only `read_prefix` to read all env vars with a specific
-    // prefix.
+    // TODO SECURITY:
+    //   From security perspective it's not good that we read *all* env
+    //   vars into the cache. This might store secrets into the persistent cache
+    //   which we want to avoid.
+    //   Instead we should use only `read_prefix` to read all env vars with a
+    //   specific prefix.
     /// Reads all env variables into a Map
     fn read_all(&self) -> EnvMapVc;
 
@@ -43,6 +46,23 @@ pub trait ProcessEnv {
                 .get(&name.to_uppercase())
                 .cloned(),
         ))
+    }
+}
+
+#[turbo_tasks::value(transparent)]
+pub struct EnvMapProcessEnv(EnvMapVc);
+
+#[turbo_tasks::value_impl]
+impl ProcessEnv for EnvMapProcessEnv {
+    #[turbo_tasks::function]
+    fn read_all(&self) -> EnvMapVc {
+        self.0
+    }
+}
+
+impl From<EnvMapVc> for EnvMapProcessEnvVc {
+    fn from(value: EnvMapVc) -> Self {
+        EnvMapProcessEnvVc::cell(value)
     }
 }
 
