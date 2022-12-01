@@ -6810,6 +6810,7 @@ name = "turbopack-tests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "next-core",
  "once_cell",
  "serde",
  "serde_json",
