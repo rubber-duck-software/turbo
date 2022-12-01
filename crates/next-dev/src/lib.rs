@@ -330,8 +330,18 @@ async fn source(
     .into();
     let static_source =
         StaticAssetsContentSourceVc::new(String::new(), project_path.join("public")).into();
-    let main_source =
-        CombinedContentSourceVc::new(vec![static_source, app_source, rendered_source, web_source]);
+    let next_static_source = StaticAssetsContentSourceVc::new(
+        "_next/static/".to_owned(),
+        project_path.join(".next/static"),
+    )
+    .into();
+    let main_source = CombinedContentSourceVc::new(vec![
+        next_static_source,
+        static_source,
+        app_source,
+        rendered_source,
+        web_source,
+    ]);
     let introspect = IntrospectionSource {
         roots: HashSet::from([main_source.into()]),
     }

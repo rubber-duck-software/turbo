@@ -17,7 +17,7 @@ pub struct HttpResponse {
 
 #[turbo_tasks::value(shared)]
 #[derive(Debug)]
-pub struct HttpResponseBody(Vec<u8>);
+pub struct HttpResponseBody(pub Vec<u8>);
 
 #[turbo_tasks::value_impl]
 impl HttpResponseBodyVc {
