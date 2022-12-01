@@ -28,6 +28,7 @@ tokio_console = [
   "turbo-tasks/tokio_tracing",
 ]
 profile = []
+next-font = ["next-core/next-font"]
 
 [dependencies]
 anyhow = "1.0.47"
