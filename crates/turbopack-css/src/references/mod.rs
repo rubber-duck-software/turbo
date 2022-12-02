@@ -131,6 +131,9 @@ impl<'a> VisitAstPath for AssetReferencesVisitor<'a> {
         }
 
         let src = url_string(u);
+        if src.starts_with("/_next/") {
+            return u.visit_children_with_path(self, ast_path);
+        }
 
         self.references.push(
             UrlAssetReferenceVc::new(
